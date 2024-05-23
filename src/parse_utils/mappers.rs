@@ -1,16 +1,34 @@
 use super::{StringReader, Parser};
 
-pub fn default<O1, O2: Default + Clone, F: Parser<O1>>(map_default: F) -> impl Fn(StringReader) -> Option<(StringReader, O2)> {
-    let default = O2::default();
-    move |input| map_default.parse(input).map(|(reader, _)| (reader, default.clone()))
+pub trait Mappable<O>: Parser<O> {
+    fn map<O2, M: Fn(O) -> O2>(self, map: M) -> impl Fn(StringReader) -> Option<(StringReader, O2)>;
+    fn default<O2: Default + Clone>(self) -> impl Fn(StringReader) -> Option<(StringReader, O2)>;
+    fn optional(self) -> impl Fn(StringReader) -> Option<(StringReader, Option<O>)>;
 }
 
-pub fn optional<O, F: Parser<O>>(opt: F) -> impl Fn(StringReader) -> Option<(StringReader, Option<O>)> {
-    move |input| {
-        if let Some((reader, o)) = opt.parse(input.clone()) {
-            Some((reader, Some(o)))
-        } else {
-            Some((input, None))
+impl <O, F: Parser<O>> Mappable<O> for F {
+    fn map<O2, M: Fn(O) -> O2>(self, map: M) -> impl Fn(StringReader) -> Option<(StringReader, O2)> {
+        move |input| {
+            if let Some((take, o)) = self.parse(input) {
+                Some((take, map(o)))
+            } else {
+                None
+            }
+        }
+    }
+
+    fn default<O2: Default + Clone>(self) -> impl Fn(StringReader) -> Option<(StringReader, O2)> {
+        let default = O2::default();
+        move |input| self.parse(input).map(|(reader, _)| (reader, default.clone()))
+    }
+
+    fn optional(self) -> impl Fn(StringReader) -> Option<(StringReader, Option<O>)> {
+        move |input| {
+            if let Some((reader, o)) = self.parse(input.clone()) {
+                Some((reader, Some(o)))
+            } else {
+                Some((input, None))
+            }
         }
     }
 }
@@ -20,20 +38,14 @@ pub fn take_fold<S: Copy, F: Fn(S, char) -> (S, bool)>(start: S, fold: F) -> imp
         let state = start;
         loop {
             let (state, ok) = fold(state, input[0]);
-            input = input.move_head(1)?;
+            if let Some(t) = input.move_head(1) {
+                input = t;
+            } else {
+                return Some((input, state));
+            }
             if !ok {
                 return Some((input, state));
             }
-        }
-    }
-}
-
-pub fn map<O1, O2, F: Parser<O1>, M: Fn(O1) -> O2>(part: F, map: M) -> impl Fn(StringReader) -> Option<(StringReader, O2)> {
-    move |input| {
-        if let Some((take, o)) = part.parse(input) {
-            Some((take, map(o)))
-        } else {
-            None
         }
     }
 }

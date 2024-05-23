@@ -40,7 +40,7 @@ impl StringReader {
             }
         } else if amount < 0 {
             let mut n = self.clone();
-            let mut d = -amount as usize;
+            let d = -amount as usize;
             if d > n.head {
                 None
             } else {

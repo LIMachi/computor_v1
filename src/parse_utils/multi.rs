@@ -1,70 +1,88 @@
 use std::collections::Bound;
 use std::ops::RangeBounds;
 use macros::{impl_any_for_tuples, impl_parser_for_tuples};
-use super::{StringReader, Parser};
+use super::{StringReader, Parser, ParserOut};
+
+pub trait Any<O> {
+    fn any_parse(&self, input: StringReader) -> ParserOut<O>;
+    fn any(self) -> impl Fn(StringReader) -> ParserOut<O>;
+}
 
 impl <O, F: Fn(StringReader) -> Option<(StringReader, O)>> Parser<O> for F {
     fn parse(&self, input: StringReader) -> Option<(StringReader, O)> {
         self(input)
     }
 
-    fn parser(&self) -> impl Fn(StringReader) -> Option<(StringReader, O)> {
+    fn parser(self) -> impl Fn(StringReader) -> Option<(StringReader, O)> {
         self
     }
 }
 
-pub trait Any<O> {
-    fn any(&self, input: StringReader) -> Option<(StringReader, O)>;
-}
+impl Parser<()> for () {
+    fn parse(&self, input: StringReader) -> ParserOut<()> {
+        Some((input, ()))
+    }
 
-impl_parser_for_tuples!();
-impl_any_for_tuples!();
-
-pub fn alt<O>(alts: impl Any<O>) -> impl Fn(StringReader) -> Option<(StringReader, O)> {
-    move |input| { alts.any(input) }
-}
-
-pub fn seq<O, F: Parser<O>>(seq: Vec<F>) -> impl Fn(StringReader) -> Option<(StringReader, Vec<O>)> {
-    move |mut input| {
-        let mut out = Vec::with_capacity(seq.len());
-        for f in &seq {
-            if let Some((ni, o)) = f.parse(input.clone()) {
-                out.push(o);
-                input = ni;
-            } else {
-                return None;
-            }
-        }
-        Some((input, out))
+    fn parser(self) -> impl Fn(StringReader) -> ParserOut<()> {
+        |input| Some((input, ()))
     }
 }
 
-pub fn rep<O, F: Parser<O> + 'static, R: RangeBounds<usize>>(range: R, rep: F) -> impl Fn(StringReader) -> Option<(StringReader, Vec<O>)> {
-    let min = match range.start_bound() {
-        Bound::Included(v) => *v,
-        Bound::Excluded(v) => *v + 1,
-        Bound::Unbounded => 0
-    };
-    let max = match range.end_bound() {
-        Bound::Included(v) => Some(*v),
-        Bound::Excluded(v) => Some(*v - 1),
-        Bound::Unbounded => None
-    };
-    move |mut input| {
-        let parser = rep.parser();
-        let mut out = Vec::with_capacity(min);
-        while max.map_or(true, |max| out.len() < max) {
-            if let Some((ni, o)) = parser(input.clone()) {
-                out.push(o);
-                input = ni;
-            } else {
-                break;
+impl Any<()> for () {
+    fn any_parse(&self, input: StringReader) -> Option<(StringReader, ())> {
+        Some((input, ()))
+    }
+
+    fn any(self) -> impl Fn(StringReader) -> ParserOut<()> {
+        |input| Some((input, ()))
+    }
+}
+
+impl <O, F: Fn(StringReader) -> Option<(StringReader, O)>> Any<O> for F {
+    fn any_parse(&self, input: StringReader) -> Option<(StringReader, O)> {
+        self(input)
+    }
+
+    fn any(self) -> impl Fn(StringReader) -> ParserOut<O> {
+        self
+    }
+}
+
+impl_parser_for_tuples!(20);
+impl_any_for_tuples!(20);
+
+pub trait Repeatable<O>: Parser<O> {
+    fn rep<R: RangeBounds<usize>>(self, range: R) -> impl Fn(StringReader) -> ParserOut<Vec<O>>;
+}
+
+impl <O, F: Parser<O>> Repeatable<O> for F {
+    fn rep<R: RangeBounds<usize>>(self, range: R) -> impl Fn(StringReader) -> ParserOut<Vec<O>> {
+        let min = match range.start_bound() {
+            Bound::Included(v) => *v,
+            Bound::Excluded(v) => *v + 1,
+            Bound::Unbounded => 0
+        };
+        let max = match range.end_bound() {
+            Bound::Included(v) => Some(*v),
+            Bound::Excluded(v) => Some(*v - 1),
+            Bound::Unbounded => None
+        };
+        let parser = self.parser();
+        move |mut input| {
+            let mut out = Vec::with_capacity(min);
+            while max.map_or(true, |max| out.len() < max) {
+                if let Some((ni, o)) = parser(input.clone()) {
+                    out.push(o);
+                    input = ni;
+                } else {
+                    break;
+                }
             }
-        }
-        if range.contains(&out.len()) {
-            Some((input, out))
-        } else {
-            None
+            if range.contains(&out.len()) {
+                Some((input, out))
+            } else {
+                None
+            }
         }
     }
 }
