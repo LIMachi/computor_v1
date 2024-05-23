@@ -7,7 +7,6 @@ References used:
 Rust version: `rustc 1.77.2`
 
 Libraries used:
-- `nom`: combinator based parser
 
 Completion:
 - [x] parser
@@ -21,4 +20,4 @@ Completion:
 - [ ] show steps
 
 Testing:
-`cargo run`
+`cargo run "5 * X^0 + 4 * X^1 -9.3 * X^2 = 1 * X^0"`
