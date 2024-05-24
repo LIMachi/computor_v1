@@ -1,15 +1,15 @@
-use super::{StringReader, Number};
+use super::{StringReader, Number, ParserOut, ParserError, ExpectedChar};
 
-pub fn float(input: StringReader) -> Option<(StringReader, f32)> {
+pub fn float(input: StringReader) -> ParserOut<f32> {
     Number::read(input).map(|(reader, num)| (reader, f32::from(num)))
 }
 
-pub fn int(input: StringReader) -> Option<(StringReader, i32)> {
-    Number::read(input).and_then(|(reader, num)| i32::try_from(num).ok().map(|v| (reader, v)))
+pub fn int(input: StringReader) -> ParserOut<i32> {
+    Number::read(input).and_then(|(reader, num)| i32::try_from(num).map(|v| (reader, v)).map_err(|_| ParserError::InvalidNumberCast { from: num, to: "i32" }))
 }
 
-pub fn unsigned(input: StringReader) -> Option<(StringReader, u32)> {
-    Number::read(input).and_then(|(reader, num)| u32::try_from(num).ok().map(|v| (reader, v)))
+pub fn unsigned(input: StringReader) -> ParserOut<u32> {
+    Number::read(input).and_then(|(reader, num)| u32::try_from(num).map(|v| (reader, v)).map_err(|_| ParserError::InvalidNumberCast { from: num, to: "u32" }))
 }
 
 impl TryFrom<Number> for u32 {
@@ -105,7 +105,7 @@ enum NumberState {
 }
 
 impl Number {
-    fn read(reader: StringReader) -> Option<(StringReader, Self)> {
+    fn read(reader: StringReader) -> ParserOut<Self> {
         let r = reader.clone();
         let r = r.skip_whitespaces();
         let mut state = NumberState::Integer; //integer allow transition to dot/e, dot is always consumed, e is consumed only if an exponent is present
@@ -114,7 +114,7 @@ impl Number {
             '-' => { out.negative = true; },
             '+' => {},
             c @ '0' ..= '9' => { out.integer = c as u32 - '0' as u32; },
-            _ => { return None; }
+            c @ _ => { return Err(ParserError::InvalidCharacter { pos: r.true_index(0), char: c, expected: ExpectedChar::Any("+-0123456789") }); }
         }
         let mut r = r.move_head(1)?;
         loop {
@@ -135,7 +135,7 @@ impl Number {
                         }
                     }
                     if state != NumberState::Exponent {
-                        return Some((r.move_head(-1)?, out));
+                        return Ok((r.move_head(-1)?, out));
                     }
                 },
                 c @ '0' ..= '9' => {
@@ -148,10 +148,10 @@ impl Number {
                         }
                     }
                 }
-                _ => { return Some((r, out)); }
+                _ => { return Ok((r, out)); }
             }
             let t = r.move_head(1);
-            if t.is_none() { return Some((r, out)); }
+            if t.is_err() { return Ok((r, out)); }
             r = t.unwrap();
         }
     }

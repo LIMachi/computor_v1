@@ -8,4 +8,4 @@ opt-level = 0
 debug = true
 
 [dependencies]
-macros = { path = "src/macros" }
+parser = { path = "parser" }

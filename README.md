@@ -14,7 +14,7 @@ Completion:
 - [x] degree of equation
 - [ ] discriminant
 - [ ] solution(s)
-- [ ] invalid input
+- [x] invalid input
 - [x] free form entries
 - [ ] solutions as fractions
 - [ ] show steps

@@ -1,17 +1,17 @@
 mod maths;
 mod polynomial;
 mod frac;
-mod parse_utils;
 
 use std::env::args;
-use crate::polynomial::parser::parse;
+use parser::Parseable;
+use crate::polynomial::parser::poly_eq;
 
 fn main() {
     if args().len() != 2 {
         println!("expected a single argument");
         return;
     }
-    let expr = parse(args().last().unwrap()).unwrap();
+    let expr = args().last().unwrap().parse(true, poly_eq()).unwrap();
     dbg!(&expr);
     println!("{}\ndegree: {}", expr, expr.degree());
 }
