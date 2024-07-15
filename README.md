@@ -12,12 +12,13 @@ Completion:
 - [x] parser
 - [x] simplified form
 - [x] degree of equation
-- [ ] discriminant
-- [ ] solution(s)
+- [x] discriminant
+- [x] solution(s)
 - [x] invalid input
 - [x] free form entries
 - [ ] solutions as fractions
 - [ ] show steps
+- [x] complex as solutions
 
 Testing:
 `cargo run "5 * X^0 + 4 * X^1 -9.3 * X^2 = 1 * X^0"`

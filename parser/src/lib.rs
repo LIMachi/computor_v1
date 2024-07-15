@@ -3,13 +3,14 @@ pub mod string_reader;
 pub mod mappers;
 pub mod multi;
 pub mod utils;
+mod regex;
 
 pub mod prelude {
-    pub use crate::{ParserError, ParserOut, Parser, ExpectedChar, StringReader, Number, Any, Repeatable, Branch, Parseable};
-    pub use crate::number::{int, float, unsigned};
+    pub use crate::{ParserError, ParserOut, Parser, ExpectedChar, StringReader, Number, Any, Repeatable, Branch, Parseable, Permutation};
+    pub use crate::number::{int, float, unsigned, unsigned_float};
     pub use crate::mappers::{map, default, optional, Mappable, Optional};
-    pub use crate::multi::{branch, rep, delimited, seq, separated_pair, any, preceded, terminated};
-    pub use crate::utils::white;
+    pub use crate::multi::{branch, rep, delimited, seq, separated_pair, any, preceded, terminated, perm};
+    pub use crate::utils::{white, skip};
 }
 
 use std::error::Error;
@@ -19,16 +20,17 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub enum ExpectedChar {
     Single(char),
-    Any(&'static str)
+    Any(String),
+    NoneOf(String)
 }
 
 #[derive(Debug)]
 pub enum ParserError {
     EndOfInput, //reached the end of the input before finishing the parser
-    NoMatch, //the any method did not find a valid match, or a sequential parser did not fully match the input
+    NoMatch { head: usize }, //the any method did not find a valid match, or a sequential parser did not fully match the input
     InvalidNumberCast { from: Number, to: &'static str }, //tried to cast a Number to i32/u32 while being an f32/-i32
     MatchedOutsideOfRange { matched: usize, min: usize, max: Option<usize> }, //returned if rep did not match enough times or too many times
-    DanglingCharacters { head: usize, length: usize }, //returned by StringReader finished if there is still characters to process in the buffer
+    DanglingCharacters { head: usize, length: usize, left_to_parse: String }, //returned by StringReader finished if there is still characters to process in the buffer
     InvalidCharacter { char: char, pos: usize, expected: ExpectedChar }, //tried to match a character but failed
     Custom(Box<dyn Error>) //custom parser error emitted by the user
 }
@@ -58,7 +60,8 @@ pub struct Number {
 ///anything that can be parsed using a parser
 pub trait Parseable<O>: Into<StringReader> {
     ///take self, transform it into a buffer StringReader and apply the given parser to it, returning the result
-    fn parse(self, all: bool, parser: impl Parser<O>) -> Result<O, ParserError>;
+    ///note: since parse is used in many crates and in the standard library, I had to default to another name
+    fn parse_with(self, all: bool, parser: impl Parser<O>) -> Result<O, ParserError>;
 }
 
 ///anything that can be parsed in order (full match)
@@ -74,6 +77,11 @@ pub trait Any<O> {
     fn any(self) -> impl Fn(StringReader) -> ParserOut<O>;
 }
 
+///anything that need full match but in any order (ex: ('*', '=') will match both "*=" and "=*", but nothing else, and the result will be in the same order as the input (so "=*" will still output "*=")
+pub trait Permutation<O> {
+    fn permute(self) -> impl Fn(StringReader) -> ParserOut<O>;
+}
+
 ///anything that can be parsed multiple times to construct a vec of results
 pub trait Repeatable<O>: Parser<O> {
     ///try to match self multiple time (greedy or lazy), discard the match if it is not in the range
@@ -85,7 +93,7 @@ pub trait Repeatable<O>: Parser<O> {
 
 pub trait Branch<O>: Parser<O> {
     ///continue parsing using either the ok or error branch after executing itself
-    ///the input of if_ok is the original input, not the input after matching self
-    ///(so branch is basically a look ahead), and the output of self is discarded
-    fn branch<O2, F: Parser<O2>>(self, if_ok: F, if_error: F) -> impl Fn(StringReader) -> ParserOut<O2>;
+    ///the input of if_ok is the original input unless skip match is true
+    ///the output of self is discarded
+    fn branch<O2>(self, skip_match: bool, if_ok: impl Parser<O2>, if_error: impl Parser<O2>) -> impl Fn(StringReader) -> ParserOut<O2>;
 }

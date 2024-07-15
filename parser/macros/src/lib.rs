@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use std::str::FromStr;
 
 /*
-impl <O0, F0: Parser<O0>, O1, F1: Parser<O1>> Parser<(O0, O1)> for (F0, F1) {
+impl <O0, O1, M0: Parser<O0>, M1: Parser<O1>> Parser<(O0, O1)> for (M0, M1) {
     fn parser(self) -> impl Fn(StringReader) -> ParserOut<(O0, O1)> {
         let parsers = (self.0.parser(), self.1.parser());
         move |input| {
@@ -12,81 +12,133 @@ impl <O0, F0: Parser<O0>, O1, F1: Parser<O1>> Parser<(O0, O1)> for (F0, F1) {
         }
     }
 }
-*/
 
-#[proc_macro]
-pub fn impl_parser_for_tuples(input: TokenStream) -> TokenStream {
-    let mut s = String::new();
-    let rec = usize::from_str(input.to_string().as_str()).unwrap();
-    for l in 1..rec {
-        s += "impl <";
-        for i in 0..l {
-            s += format!("O{i}, F{i}: Parser<O{i}>, ").as_str();
-        }
-        s += format!("O{l}, F{l}: Parser<O{l}>> Parser<(").as_str();
-        for i in 0..l {
-            s += format!("O{i}, ").as_str();
-        }
-        s += format!("O{l})> for (").as_str();
-        for i in 0..l {
-            s += format!("F{i}, ").as_str();
-        }
-        s += format!("F{l}) {{\n\t\n\n\tfn parser(self) -> impl Fn(StringReader) -> ParserOut<(").as_str();
-        for i in 0..l {
-            s += format!("O{i}, ").as_str();
-        }
-        s += format!("O{l})> {{\n\tlet parsers = (").as_str();
-        for i in 0..l {
-            s += format!("self.{i}.parser(), ").as_str();
-        }
-        s += format!("self.{l}.parser());\n\tmove |input| {{\n\t\t").as_str();
-        for i in 0..=l {
-            s += format!("let (input, o{i}) = parsers.{i}(input)?;\n\t\t").as_str();
-        }
-        s += "Ok((input, (";
-        for i in 0..l {
-            s += format!("o{i}, ").as_str();
-        }
-        s += format!("o{l})))\n\t\t}}\n\t}}\n}}\n\n").as_str();
-    }
-    s.parse().unwrap()
-}
-
-/*
-impl <O, F1: Parser<O>, F2: Parser<O>> Any<O> for (F1, F2) {
+impl <O, M0: Parser<O>, M1: Parser<O>> Any<O> for (M0, M1) {
     fn any(self) -> impl Fn(StringReader) -> ParserOut<O> {
         let parsers = (self.0.parser(), self.1.parser());
         move |input| {
             if let Ok(t) = parsers.0(input.clone()) { return Ok(t); }
             if let Ok(t) = parsers.1(input.clone()) { return Ok(t); }
-            Err(ParserError::NoMatch)
+            Err(ParserError::NoMatch { head: input.true_index(0) })
+        }
+    }
+}
+
+impl <O0, M0: Parser<O0>, O1, M1: Parser<O1>> Permutation<(O0, O1)> for (M0, M1) {
+    fn permute(self) -> impl Fn(StringReader) -> ParserOut<(O0, O1)> {
+        let parsers = (self.0.parser(), self.1.parser());
+        move |mut input| {
+            let mut o0 = None;
+            let mut o1 = None;
+            for _ in 0..2 {
+                if o0.is_none() {
+                    if let Ok((reader, o)) = parsers.0(input.clone()) {
+                        input = reader;
+                        o0 = Some(o);
+                        continue;
+                    }
+                }
+                if o1.is_none() {
+                    if let Ok((reader, o)) = parsers.1(input.clone()) {
+                        input = reader;
+                        o1 = Some(o);
+                        continue;
+                    }
+                }
+                return Err(ParserError::NoMatch { head: input.true_index(0) });
+            }
+            Ok((input, (o0.unwrap(), o1.unwrap())))
         }
     }
 }
 */
 
 #[proc_macro]
-pub fn impl_any_for_tuples(input: TokenStream) -> TokenStream {
-    let mut s = String::new();
+pub fn impl_tuples(input: TokenStream) -> TokenStream {
     let rec = usize::from_str(input.to_string().as_str()).unwrap();
+    let mut out = String::new();
+
     for l in 1..rec {
-        s += "impl <O, ";
-        for i in 0..l {
-            s += format!("F{i}: Parser<O>, ").as_str();
-        }
-        s += format!("F{l}: Parser<O>> Any<O> for (").as_str();
-        for i in 0..l {
-            s += format!("F{i}, ").as_str();
-        }
-        s += format!("F{l}) {{\n\tfn any(self) -> impl Fn(StringReader) -> ParserOut<O> {{\n\t\tlet parsers = (").as_str();
-        for i in 0..l {
-            s += format!("self.{i}.parser(), ").as_str();
-        }
-        s += format!("self.{l}.parser());\n\t\tmove |input| {{\n").as_str();
+        let mut generic_output_list = String::new(); //ex: "O0, O1, O2"
+        let mut generic_modules_list = String::new(); //ex: "M0, M1, M2"
+        let mut generic_parser_list = String::new(); //ex: "M0: Parser<O0>, M1: Parser<O1>"
+        let mut generic_parser_list_with_o = String::new(); //ex: "M0: Parser<O>, M1: Parser<O>"
+        let mut mapped_parsers = String::new(); //ex: "self.0.parser(), self.1.parser()"
+        let mut parsers_output = String::new(); //ex: "o0, o1, o2"
+        let mut parser_impl_lines = String::new(); //ex: "let (input, o0) = parsers.0(input)?;\n"
+        let mut any_impl_lines = String::new(); //ex: "if let Ok(t) = parsers.0(input.clone()) { return Ok(t); }\n"
+        let mut optional_output = String::new(); //ex: let mut o0 = None;
+        let mut unwrap_output = String::new(); //o0.unwrap(), o1.unwrap()
+        let mut permut_impl_block = String::new();
         for i in 0..=l {
-            s += format!("\t\t\tif let Ok(t) = parsers.{i}(input.clone()) {{ return Ok(t); }}\n").as_str();
+            generic_output_list += format!("O{i}").as_str();
+            generic_modules_list += format!("M{i}").as_str();
+            generic_parser_list += format!("M{i}: Parser<O{i}>").as_str();
+            generic_parser_list_with_o += format!("M{i}: Parser<O>").as_str();
+            mapped_parsers += format!("self.{i}.parser()").as_str();
+            parsers_output += format!("o{i}").as_str();
+            parser_impl_lines += format!("let (input, o{i}) = parsers.{i}(input)?;").as_str();
+            any_impl_lines += format!("if let Ok(t) = parsers.{i}(input.clone()) {{ return Ok(t); }}").as_str();
+            optional_output += format!("let mut o{i} = None;").as_str();
+            unwrap_output += format!("o{i}.unwrap()").as_str();
+            permut_impl_block += format!("if o{i}.is_none() {{
+                if let Ok((reader, o)) = parsers.{i}(input.clone()) {{
+                    input = reader;
+                    o{i} = Some(o);
+                    continue;
+                }}
+            }}").as_str();
+            if i != l {
+                generic_output_list += ", ";
+                generic_modules_list += ", ";
+                generic_parser_list += ", ";
+                generic_parser_list_with_o += ", ";
+                mapped_parsers += ", ";
+                parsers_output += ", ";
+                parser_impl_lines += "\n            ";
+                any_impl_lines += "\n            ";
+                optional_output += "\n            ";
+                unwrap_output += ", ";
+                permut_impl_block += "\n                ";
+            }
         }
-        s += "\t\t\tErr(ParserError::NoMatch)\n\t\t}\n\t}\n}\n\n";
+
+        out += format!(r"
+
+impl <{generic_output_list}, {generic_parser_list}> Parser<({generic_output_list})> for ({generic_modules_list}) {{
+    fn parser(self) -> impl Fn(StringReader) -> ParserOut<({generic_output_list})> {{
+        let parsers = ({mapped_parsers});
+        move |input| {{
+            {parser_impl_lines}
+            Ok((input, ({parsers_output})))
+        }}
+    }}
+}}
+
+impl <O, {generic_parser_list_with_o}> Any<O> for ({generic_modules_list}) {{
+    fn any(self) -> impl Fn(StringReader) -> ParserOut<O> {{
+        let parsers = ({mapped_parsers});
+        move |input| {{
+            {any_impl_lines}
+            Err(ParserError::NoMatch {{ head: input.true_index(0) }})
+        }}
+    }}
+}}
+
+impl <{generic_output_list}, {generic_parser_list}> Permutation<({generic_output_list})> for ({generic_modules_list}) {{
+    fn permute(self) -> impl Fn(StringReader) -> ParserOut<({generic_output_list})> {{
+        let parsers = ({mapped_parsers});
+        move |mut input| {{
+            {optional_output}
+            for _ in 0..{l} {{
+                {permut_impl_block}
+                return Err(ParserError::NoMatch {{ head: input.true_index(0) }});
+            }}
+            Ok((input, ({unwrap_output})))
+        }}
+    }}
+}}
+").as_str();
     }
-    s.parse().unwrap()
+    out.parse().unwrap()
 }

@@ -1,15 +1,20 @@
 use super::{StringReader, Number, ParserOut, ParserError, ExpectedChar};
 
 pub fn float(input: StringReader) -> ParserOut<f32> {
-    Number::read(input).map(|(reader, num)| (reader, f32::from(num)))
+    Number::read(false, input).map(|(reader, num)| (reader, f32::from(num)))
+}
+
+///same as float, but does not allow a preceding +/-
+pub fn unsigned_float(input: StringReader) -> ParserOut<f32> {
+    Number::read(true, input).map(|(reader, num)| (reader, f32::from(num)))
 }
 
 pub fn int(input: StringReader) -> ParserOut<i32> {
-    Number::read(input).and_then(|(reader, num)| i32::try_from(num).map(|v| (reader, v)).map_err(|_| ParserError::InvalidNumberCast { from: num, to: "i32" }))
+    Number::read(false, input).and_then(|(reader, num)| i32::try_from(num).map(|v| (reader, v)).map_err(|_| ParserError::InvalidNumberCast { from: num, to: "i32" }))
 }
 
 pub fn unsigned(input: StringReader) -> ParserOut<u32> {
-    Number::read(input).and_then(|(reader, num)| u32::try_from(num).map(|v| (reader, v)).map_err(|_| ParserError::InvalidNumberCast { from: num, to: "u32" }))
+    Number::read(false, input).and_then(|(reader, num)| u32::try_from(num).map(|v| (reader, v)).map_err(|_| ParserError::InvalidNumberCast { from: num, to: "u32" }))
 }
 
 impl TryFrom<Number> for u32 {
@@ -105,16 +110,16 @@ enum NumberState {
 }
 
 impl Number {
-    fn read(reader: StringReader) -> ParserOut<Self> {
+    fn read(unsigned: bool, reader: StringReader) -> ParserOut<Self> {
         let r = reader.clone();
         let r = r.skip_whitespaces();
         let mut state = NumberState::Integer; //integer allow transition to dot/e, dot is always consumed, e is consumed only if an exponent is present
         let mut out = Self::default();
         match r[0] {
-            '-' => { out.negative = true; },
-            '+' => {},
+            '-' if !unsigned => { out.negative = true; },
+            '+' if !unsigned => {},
             c @ '0' ..= '9' => { out.integer = c as u32 - '0' as u32; },
-            c @ _ => { return Err(ParserError::InvalidCharacter { pos: r.true_index(0), char: c, expected: ExpectedChar::Any("+-0123456789") }); }
+            c @ _ => { return Err(ParserError::InvalidCharacter { pos: r.true_index(0), char: c, expected: ExpectedChar::Any(format!("{}0123456789", if unsigned { "" } else { "+-" })) }); }
         }
         let mut r = r.move_head(1)?;
         loop {
@@ -141,9 +146,13 @@ impl Number {
                 c @ '0' ..= '9' => {
                     let v = c as u32 - '0' as u32;
                     match state {
-                        NumberState::Integer => out.integer = out.integer * 10 + v,
-                        NumberState::Fractional => out.frac = out.frac * 10 + v,
-                        NumberState::Exponent => {
+                        NumberState::Integer => if out.integer <= 100000000 {
+                            out.integer = out.integer * 10 + v;
+                        },
+                        NumberState::Fractional => if out.frac <= 100000000 {
+                            out.frac = out.frac * 10 + v;
+                        },
+                        NumberState::Exponent => if out.exponent <= 100000000 {
                             out.exponent = out.exponent * 10 + v
                         }
                     }

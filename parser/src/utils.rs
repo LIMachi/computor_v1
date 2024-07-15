@@ -1,15 +1,57 @@
-use crate::{ExpectedChar, Parser, ParserError, ParserOut, StringReader};
+use crate::{Any, ExpectedChar, Parser, ParserError, ParserOut, StringReader};
 
 impl <'s> Parser<&'s str> for &'s str {
     fn parser(self) -> impl Fn(StringReader) -> ParserOut<&'s str> {
-        let l = self.chars().count();
+        let chars: Vec<char> = self.chars().collect();
         move |input| {
-            for (i, c) in self.chars().enumerate() {
-                if input[i] != c {
-                    return Err(ParserError::InvalidCharacter { pos: input.true_index(i), char: input[i], expected: ExpectedChar::Single(c) });
+            for (i, c) in chars.iter().enumerate() {
+                if input[i] != *c {
+                    return Err(ParserError::InvalidCharacter { pos: input.true_index(i), char: input[i], expected: ExpectedChar::Single(*c) });
                 }
             }
-            Ok((input.move_head(l as isize)?, self))
+            Ok((input.move_head(chars.len() as isize)?, self))
+        }
+    }
+}
+
+impl Parser<String> for String {
+    fn parser(self) -> impl Fn(StringReader) -> ParserOut<String> {
+        let chars: Vec<char> = self.chars().collect();
+        move |input| {
+            for (i, c) in chars.iter().enumerate() {
+                if input[i] != *c {
+                    return Err(ParserError::InvalidCharacter { pos: input.true_index(i), char: input[i], expected: ExpectedChar::Single(*c) });
+                }
+            }
+            Ok((input.move_head(chars.len() as isize)?, self.clone()))
+        }
+    }
+}
+
+impl Any<char> for &str {
+    fn any(self) -> impl Fn(StringReader) -> ParserOut<char> {
+        let chars: Vec<char> = self.chars().collect();
+        move |input| {
+            for c in &chars {
+                if input[0] == *c {
+                    return Ok((input.move_head(1)?, *c));
+                }
+            }
+            Err(ParserError::InvalidCharacter { pos: input.true_index(0), char: input[0], expected: ExpectedChar::Any(self.to_string()) })
+        }
+    }
+}
+
+impl Any<char> for String {
+    fn any(self) -> impl Fn(StringReader) -> ParserOut<char> {
+        let chars: Vec<char> = self.chars().collect();
+        move |input| {
+            for c in &chars {
+                if input[0] == *c {
+                    return Ok((input.move_head(1)?, *c));
+                }
+            }
+            Err(ParserError::InvalidCharacter { pos: input.true_index(0), char: input[0], expected: ExpectedChar::Any(self.clone()) })
         }
     }
 }
@@ -26,10 +68,65 @@ impl Parser<char> for char {
     }
 }
 
+impl Any<char> for char {
+    fn any(self) -> impl Fn(StringReader) -> ParserOut<char> {
+        move |input| {
+            if input[0] == self {
+                Ok((input.move_head(1)?, self))
+            } else {
+                Err(ParserError::InvalidCharacter { pos: input.true_index(0), char: input[0], expected: ExpectedChar::Single(self) })
+            }
+        }
+    }
+}
+
 pub fn white(input: StringReader) -> ParserOut<usize> {
     let mut t = 0;
     while input[t].is_whitespace() {
         t += 1;
     }
     Ok((input.move_head(t as isize)?, t))
+}
+
+pub fn skip(chars: usize) -> impl Fn(StringReader) -> ParserOut<usize> {
+    move |input| { Ok((input.move_head(chars as isize)?, chars)) }
+}
+
+pub fn single(input: StringReader) -> ParserOut<char> {
+    let c = input[0];
+    Ok((input.move_head(1)?, c))
+}
+
+pub trait NoneOf {
+    fn none_of(self) -> impl Fn(StringReader) -> ParserOut<char>;
+}
+
+impl NoneOf for &str {
+    fn none_of(self) -> impl Fn(StringReader) -> ParserOut<char> {
+        let chars: Vec<char> = self.chars().collect();
+        move |input| {
+            for c in &chars {
+                if input[0] == *c {
+                    return Err(ParserError::InvalidCharacter { pos: input.true_index(0), char: input[0], expected: ExpectedChar::NoneOf(self.to_string()) });
+                }
+            }
+            let c = input[0];
+            return Ok((input.move_head(1)?, c));
+        }
+    }
+}
+
+impl NoneOf for String {
+    fn none_of(self) -> impl Fn(StringReader) -> ParserOut<char> {
+        let chars: Vec<char> = self.chars().collect();
+        move |input| {
+            for c in &chars {
+                if input[0] == *c {
+                    return Err(ParserError::InvalidCharacter { pos: input.true_index(0), char: input[0], expected: ExpectedChar::NoneOf(self.clone()) });
+                }
+            }
+            let c = input[0];
+            return Ok((input.move_head(1)?, c));
+        }
+    }
 }

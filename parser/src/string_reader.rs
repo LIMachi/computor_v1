@@ -1,6 +1,6 @@
 use std::ops::Index;
 use std::rc::Rc;
-use super::{Parseable, Parser, ParserError, ParserOut, StringReader};
+use super::{Parseable, Parser, ParserError, StringReader};
 
 impl Index<usize> for StringReader {
     type Output = char;
@@ -57,7 +57,11 @@ impl StringReader {
         if self.head >= self.chars.len() {
             Ok(())
         } else {
-            Err(ParserError::DanglingCharacters { head: self.head, length: self.chars.len() })
+            let mut acc = String::new();
+            for i in self.head..self.chars.len() {
+                acc.push(self.chars[i]);
+            }
+            Err(ParserError::DanglingCharacters { head: self.head, length: self.chars.len(), left_to_parse: acc })
         }
     }
 
@@ -83,9 +87,11 @@ impl Into<StringReader> for String {
 }
 
 impl <O, S: Into<StringReader>> Parseable<O> for S {
-    fn parse(self, all: bool, parser: impl Parser<O>) -> Result<O, ParserError> {
+    fn parse_with(self, all: bool, parser: impl Parser<O>) -> Result<O, ParserError> {
         parser.parser()(self.into()).and_then(|(reader, o)| {
-            reader.finished()?;
+            if all {
+                reader.finished()?;
+            }
             Ok(o)
         })
     }
