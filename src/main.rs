@@ -1,6 +1,5 @@
 mod polynomial;
 mod complex;
-mod irreducible;
 
 use std::env::args;
 use parser::prelude::*;
@@ -46,12 +45,8 @@ impl BabylonianSqrt for f32 {
     }
 }
 
-fn main() {
-    if args().len() != 2 {
-        println!("expected a single argument");
-        return;
-    }
-    let (expr, test_with): (PolynomialEquation, Option<Complex>) = args().last().unwrap().parse_with(true, (poly_eq(), optional(preceded((white, ',', white), complex))).parser()).unwrap();
+fn computor_v1<S: Into<StringReader>>(expr: S) {
+    let (expr, test_with): (PolynomialEquation, Option<Complex>) = expr.parse_with(true, (poly_eq(), optional(preceded((white, ',', white), complex))).parser()).unwrap();
     println!("Reduced form: {expr}\nPolynomial degree: {}\n", expr.degree());
     if let Some(test) = test_with {
         println!("value of X provided ({test}), let's test the result:");
@@ -66,4 +61,12 @@ fn main() {
         println!("Discriminant: {}\n", expr.discriminant());
         expr.print_solutions();
     }
+}
+
+fn main() {
+    if args().len() != 2 {
+        println!("expected a single argument");
+        return;
+    }
+    computor_v1(args().last().unwrap());
 }

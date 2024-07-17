@@ -8,9 +8,10 @@ mod regex;
 pub mod prelude {
     pub use crate::{ParserError, ParserOut, Parser, ExpectedChar, StringReader, Number, Any, Repeatable, Branch, Parseable, Permutation};
     pub use crate::number::{int, float, unsigned, unsigned_float};
-    pub use crate::mappers::{map, default, optional, Mappable, Optional};
+    pub use crate::mappers::{map, default, optional, take_fold, Mappable, Optional};
     pub use crate::multi::{branch, rep, delimited, seq, separated_pair, any, preceded, terminated, perm};
-    pub use crate::utils::{white, skip};
+    pub use crate::utils::{white, skip, CaseInsensitive};
+    pub use std::ops::ControlFlow;
 }
 
 use std::error::Error;

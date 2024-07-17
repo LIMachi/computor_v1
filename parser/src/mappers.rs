@@ -6,6 +6,7 @@ pub trait Mappable<O>: Parser<O> {
     fn map_ok<M: Fn(O) -> O2, O2>(self, map: M) -> impl Fn(StringReader) -> ParserOut<O2>;
     ///discards the result of the parser and replaces it with a default value (does nothing if error)
     fn default<O2: Clone>(self, default: O2) -> impl Fn(StringReader) -> ParserOut<O2>;
+    fn and_then<M: Fn(StringReader, O) -> ParserOut<O2>, O2>(self, map: M) -> impl Fn(StringReader) -> ParserOut<O2>;
 }
 
 pub trait Optional<O>: Parser<O> {
@@ -24,6 +25,13 @@ impl <O, F: Parser<O>> Mappable<O> for F {
     fn default<O2: Clone>(self, default: O2) -> impl Fn(StringReader) -> ParserOut<O2> {
         let parser = self.parser();
         move |input| parser(input).map(|(reader, _)| (reader, default.clone()))
+    }
+
+    fn and_then<M: Fn(StringReader, O) -> ParserOut<O2>, O2>(self, map: M) -> impl Fn(StringReader) -> ParserOut<O2> {
+        let parser = self.parser();
+        move |input| {
+            parser(input).and_then(|(reader, out)| map(reader, out))
+        }
     }
 }
 

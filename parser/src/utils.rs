@@ -130,3 +130,35 @@ impl NoneOf for String {
         }
     }
 }
+
+pub trait CaseInsensitive: Sized {
+    fn case_insensitive(self) -> impl Fn(StringReader) -> ParserOut<Self>;
+}
+
+impl CaseInsensitive for String {
+    fn case_insensitive(self) -> impl Fn(StringReader) -> ParserOut<Self> {
+        let chars: Vec<char> = self.chars().collect();
+        move |input| {
+            let mut acc = Vec::with_capacity(chars.len());
+            for (i, c) in chars.iter().enumerate() {
+                if !input[i].eq_ignore_ascii_case(c) {
+                    return Err(ParserError::InvalidCharacter { pos: input.true_index(i), char: input[i], expected: ExpectedChar::Single(*c) });
+                }
+                acc.push(*c);
+            }
+            Ok((input.move_head(chars.len() as isize)?, String::from_iter(acc)))
+        }
+    }
+}
+
+impl CaseInsensitive for char {
+    fn case_insensitive(self) -> impl Fn(StringReader) -> ParserOut<Self> {
+        move |input| {
+            if input[0].eq_ignore_ascii_case(&self) {
+                Ok((input.move_head(1)?, input[0]))
+            } else {
+                Err(ParserError::InvalidCharacter { pos: input.true_index(0), char: input[0], expected: ExpectedChar::Single(self) })
+            }
+        }
+    }
+}

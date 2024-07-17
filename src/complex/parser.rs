@@ -28,9 +28,9 @@ pub fn complex(input: StringReader) -> ParserOut<Complex> {
 
 #[test]
 fn test_complex_parser() {
-    dbg!("i+3".parse_with(true, complex));
-    dbg!("42+3*i".parse_with(true, complex));
-    dbg!("*i".parse_with(true, complex));
-    dbg!("I".parse_with(true, complex));
-    dbg!("-42e13".parse_with(true, complex));
+    dbg!("i+3".parse_with(true, complex)).unwrap();
+    dbg!("42+3*i".parse_with(true, complex)).unwrap();
+    dbg!("*i".parse_with(true, complex)).unwrap();
+    dbg!("I".parse_with(true, complex)).unwrap();
+    dbg!("-42e13".parse_with(true, complex)).unwrap();
 }

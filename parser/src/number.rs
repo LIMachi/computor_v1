@@ -14,7 +14,7 @@ pub fn int(input: StringReader) -> ParserOut<i32> {
 }
 
 pub fn unsigned(input: StringReader) -> ParserOut<u32> {
-    Number::read(false, input).and_then(|(reader, num)| u32::try_from(num).map(|v| (reader, v)).map_err(|_| ParserError::InvalidNumberCast { from: num, to: "u32" }))
+    Number::read(true, input).and_then(|(reader, num)| u32::try_from(num).map(|v| (reader, v)).map_err(|_| ParserError::InvalidNumberCast { from: num, to: "u32" }))
 }
 
 impl TryFrom<Number> for u32 {
